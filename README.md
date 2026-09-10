@@ -1,62 +1,56 @@
-# Reddit Clone (v3) — Toned-Down Rebuild
+# Reddit Clone
 
-A simpler rebuild of the Reddit Clone project, built to genuinely
-understand every part of it end-to-end — not just have working code.
-`v2` (in the sibling folder) stays untouched as an advanced/senior-depth
-reference; this is the active build going forward.
-
-**Why this exists:** after building v2 (JWT rotation, absolute session
-caps, httpOnly cookies + CSRF, cursor pagination, multi-stage Docker,
-Redis caching), it became clear those concepts were layered on faster
-than they were sinking in. v3 rebuilds the same core app with the three
-most advanced pieces deliberately simplified, so every line is something
-that can be explained confidently, not just recited.
+A full-stack Reddit-style app — users, communities, posts, comments,
+and voting — built end-to-end to understand every part of it, not just
+have working code.
 
 **Stack:** FastAPI + SQLAlchemy + PostgreSQL (backend), React + Vite
-(frontend). No Alembic (see `CONCEPTS.md`), no Redis, single-stage Docker.
+(frontend).
 
-See `CONCEPTS.md` for a running glossary of concepts covered as we build
-(what each one does, why we need it — appended to as we go, not replaced).
+See `CONCEPTS.md` for a running glossary of concepts covered while
+building this (what each one does, why it's needed) — appended to as we
+go.
 
 ---
 
-## What's simplified vs. v2, and why
+## Architecture
 
-| | v2 | v3 |
-|---|---|---|
-| Auth | Access+refresh JWT, rotation, absolute session cap, httpOnly cookies, CSRF double-submit | One JWT, `Authorization: Bearer` header, no rotation |
-| Pagination | Cursor-based (`created_at, id`) | Simple offset (`?page=&page_size=`) |
-| Schema migrations | Alembic | `Base.metadata.create_all()` (schema still taking shape) |
-| Docker | Multi-stage builder/runtime | Single-stage |
-| Caching / rate limiting | Redis cache-aside, in-memory rate limiter | Not included (senior/scale concerns, out of scope for v3) |
+- **Auth:** one JWT issued on login, sent via `Authorization: Bearer`
+  header on every request. No refresh token — when it expires, log in
+  again.
+- **Data model:** `users`, `communities`, `posts`, `comments` (with
+  nested replies via `parent_comment_id`), `votes` (one table for both
+  post and comment votes, with a DB check constraint enforcing exactly
+  one target and a value of -1 or 1, plus partial unique indexes so a
+  user can't vote twice on the same target).
+- **Pagination:** simple offset-based (`?page=&page_size=`).
+- **Schema:** created directly from the models via
+  `Base.metadata.create_all()` (`create_tables.py`) — no migration tool
+  yet, appropriate while the schema is still taking shape.
 
 ---
 
 ## Phase log
 
-Updated after each phase completes — what was built, and the one or two
+Updated at the end of each phase — what was built, and the one or two
 things worth remembering about it.
 
 ### Phase 1 — Backend scaffolding ✅
-FastAPI app, same 5-entity schema as v2 (users, communities, posts,
-comments, votes) but **no `refresh_tokens` table** — nothing to track
-without rotation. Single-column indexes (`ix_posts_community_id`)
-instead of v2's composite `(community_id, created_at)` index, since that
-composite existed specifically to serve cursor pagination.
+FastAPI app, the 5-table schema above, single-column indexes on foreign
+keys used for filtering (`posts.community_id`, `comments.post_id`).
+Schema created via `create_tables.py`.
 
-Schema created via `create_tables.py` (`Base.metadata.create_all()`),
-no Alembic — see `CONCEPTS.md`.
-
-### Phase 2 — Simplified auth (in progress)
+### Phase 2 — Auth (in progress)
 Plan: one JWT per login, sent via `Authorization: Bearer` header, no
 refresh token, no rotation, no CSRF token needed (bearer-header auth
-isn't vulnerable to CSRF the way cookie auth is — a malicious site can't
-make the browser attach a custom header on its behalf). Tradeoff being
-accepted: the token lives in `localStorage`, which is more exposed to
-XSS than v2's httpOnly cookies were. Logout is client-side only (delete
-the token) — there's nothing for the server to revoke.
+isn't vulnerable to CSRF the way cookie-based auth is — a malicious site
+can't make the browser attach a custom header on its behalf). Tradeoff
+being accepted: the token lives in `localStorage`, which any JavaScript
+on the page can read — more exposed to XSS than a cookie-based approach
+would be. Logout is client-side only (delete the token) — there's
+nothing for the server to revoke.
 
-### Phase 3 — CRUD + simple pagination (not started)
+### Phase 3 — CRUD + pagination (not started)
 
 ### Phase 4 — Frontend (not started)
 
