@@ -76,23 +76,145 @@ table, no CSRF token to reason about (see below).
 
 ---
 
-## Phase 3 — CRUD + pagination (not started)
+## Phase 3a — Communities (not started)
 
-**What:** communities/posts/comments/votes endpoints, simple offset
-pagination (`?page=&page_size=`). This is also where `get_current_user`
-finally gets built, at the exact point a route needs it.
+**What:** `POST /communities` (create), `GET /communities` (list). This
+is also where `core/deps.py`'s `get_current_user()` finally gets built —
+deferred from Phase 2 since nothing needed it until now (creating a
+community is the first action that requires knowing who's logged in).
 
-**Scoped out for now (anticipated):**
-- Redis caching, rate limiting — senior/scale concerns, not part of v3's
-  goal.
+**Scoped out for now:** pagination on the list (small, bounded dataset —
+same reasoning v2 used for its `/communities` endpoint).
 
 ---
 
-## Phase 4 — Frontend (not started)
+## Phase 3b — Posts (not started)
 
-## Phase 5 — Testing (not started)
+**What:** `POST /communities/{id}/posts` (create), `GET
+/communities/{id}/posts` (list, unpaginated for now — pagination is its
+own phase below).
 
-## Phase 6 — Docker (not started)
+---
+
+## Phase 3c — Comments (not started)
+
+**What:** `POST /posts/{id}/comments` (create), `GET /posts/{id}/comments`
+(list) — flat, no nesting.
+
+**Scoped out for now:** nested replies (`parent_comment_id`) — add later
+as its own small enhancement once flat comments are solid.
+
+---
+
+## Phase 3d — Voting (not started)
+
+**What:** `POST /posts/{id}/vote` — **posts only**.
+
+**Why simpler than v2's vote table:** dropping comment-votes means
+`votes` doesn't need a nullable `comment_id`, a check constraint, or two
+separate partial unique indexes — just
+`(id, user_id, post_id, value)` with one plain unique constraint on
+`(user_id, post_id)`.
+
+**Scoped out for now:** voting on comments — add later as its own phase
+once post-voting is solid.
+
+---
+
+## Phase 4 — Pagination (not started)
+
+**What:** simple offset-based pagination (`?page=&page_size=`) added to
+the posts/comments list endpoints, once there's enough data built up
+(via Phases 3b/3c) to actually paginate through.
+
+**Why offset, not cursor:** `OFFSET`/`LIMIT` is simpler to reason about;
+it gets slower at very deep pages on very large tables (the database
+still scans past every skipped row), but that cost only matters at a
+scale this project doesn't need to hit. Worth being able to say exactly
+that in an interview, rather than implying offset has no downsides.
+
+---
+
+## Phase 5 — Frontend (not started)
+
+## Phase 6 — Testing (not started)
+
+## Phase 7 — Docker (not started)
 Planned: single-stage Dockerfile (vs. v2's multi-stage builder/runtime
 split) — simpler, at the cost of a slightly larger image (build tools
-stay in the final image instead of being discarded).
+stay in the final image instead of being discarded). Comes before AWS
+deployment since Phase 8 runs this same `docker-compose` setup on the
+EC2 instance.
+
+---
+
+## Phase 8 — AWS deployment (finalized plan, not started)
+
+**What we're building:** one EC2 instance (`t2.micro`/`t3.micro`) running
+`docker-compose` (backend + frontend containers only), talking to a
+separate RDS PostgreSQL instance (`db.t3.micro`) — not a containerized
+Postgres. No load balancer, no ECS/Fargate, no auto-scaling.
+
+**Why this architecture:**
+- **Database on RDS, not in a container** — if the EC2 instance ever
+  crashes or gets replaced, a containerized Postgres would take the data
+  down with it. RDS is a separate managed service; the app server and
+  the data don't share a failure point.
+- **Single EC2 instance, not ECS/Fargate/ALB** — those have NO AWS free
+  tier and bill continuously regardless of traffic; a single free-tier
+  EC2 instance can run the whole stack directly at this scale. The
+  honest limitation this accepts: no auto-restart if the instance dies,
+  no auto-scaling, manual SSH-based ops — a fair, nameable tradeoff for
+  this project's size, with a clear "what I'd change at scale" answer
+  ready (auto-scaling group + load balancer, likely ECS).
+- **No Terraform for v3** — v2 has Terraform as its IaC story; v3 stays
+  plain AWS CLI/console steps, documented, so there's one less tool to
+  learn while everything else is already new.
+
+**How (planned steps, in order):**
+1. Launch RDS (`db.t3.micro`, Postgres) — security group only accepts
+   connections from the EC2 instance's security group, never the open
+   internet (same layered-security-group idea as v2's Terraform, done
+   manually here).
+2. Launch EC2 (Ubuntu, `t2.micro`/`t3.micro`) — security group allows
+   SSH (22, ideally locked to your own IP), HTTP (80), HTTPS (443).
+3. Install Docker on the instance.
+4. `git clone` the repo onto the instance directly.
+5. Create a real `.env` on the server (`DATABASE_URL` pointing at the
+   RDS endpoint, a real `JWT_SECRET_KEY`) — never committed to git.
+6. `docker-compose up -d` — this compose file runs ONLY `backend` +
+   `frontend`, not `postgres` (that's RDS now) — the one real difference
+   from the local dev compose file.
+7. Access via the EC2 instance's public IP directly.
+
+**Monitoring:** default Docker logging stays as-is (nothing to change,
+useful for direct SSH debugging). Additionally, configure the `awslogs`
+Docker logging driver so the same log output is ALSO shipped to
+CloudWatch Logs — a few lines in `docker-compose.yml`, no separate agent
+to install. Add ONE CloudWatch Alarm (e.g. "notify me if the instance
+stops responding"). Basic EC2/RDS CPU/memory metrics are tracked by
+CloudWatch automatically, free, with no setup at all.
+
+Docker logs vs. CloudWatch, in short: `docker logs` only exists on that
+one server and disappears if it's replaced — fine for a quick check
+while you're already SSH'd in. CloudWatch keeps a durable, centralized
+copy that survives the server and can proactively alert you, which is
+what matters when nobody's actively watching. Not either/or — CloudWatch
+is purely additive on top of Docker's default logging.
+
+**Scoped out for now:**
+- **A custom domain + full HTTPS** — demo via the EC2 public IP
+  directly for now. (Certbot/Let's Encrypt is cheap to add later if
+  wanted — flagged as a low-cost upgrade, not required.)
+- **Terraform / IaC** — plain documented CLI/console steps instead.
+- **Auto-scaling, load balancer, multi-AZ RDS** — genuinely not needed
+  at this project's scale; naming this as the "what I'd add at scale"
+  answer is itself good interview material.
+
+**Before creating any real AWS resources:**
+1. Set an AWS Budget alert (e.g. at $1 and $5) so any unexpected cost
+   triggers an email immediately.
+2. Stop (don't delete) EC2/RDS when not actively demoing — a stopped
+   EC2 instance doesn't bill compute hours; RDS can be stopped for up
+   to 7 days at a time. Matters especially once the 12-month free tier
+   window ends.

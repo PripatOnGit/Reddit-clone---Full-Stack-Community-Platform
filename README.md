@@ -18,11 +18,9 @@ go.
 - **Auth:** one JWT issued on login, sent via `Authorization: Bearer`
   header on every request. No refresh token — when it expires, log in
   again.
-- **Data model:** `users`, `communities`, `posts`, `comments` (with
-  nested replies via `parent_comment_id`), `votes` (one table for both
-  post and comment votes, with a DB check constraint enforcing exactly
-  one target and a value of -1 or 1, plus partial unique indexes so a
-  user can't vote twice on the same target).
+- **Data model:** `users`, `communities`, `posts`, `comments` (flat for
+  now, no nested replies), `votes` (**posts only** for now — one user
+  can vote once per post, value -1 or 1).
 - **Pagination:** simple offset-based (`?page=&page_size=`).
 - **Schema:** created directly from the models via
   `Base.metadata.create_all()` (`create_tables.py`) — no migration tool
@@ -50,10 +48,36 @@ on the page can read — more exposed to XSS than a cookie-based approach
 would be. Logout is client-side only (delete the token) — there's
 nothing for the server to revoke.
 
-### Phase 3 — CRUD + pagination (not started)
+### Phase 3a — Communities (not started)
+Create/list communities. This is also where `get_current_user` gets
+built — deferred from Phase 2 since nothing needed it until now.
 
-### Phase 4 — Frontend (not started)
+### Phase 3b — Posts (not started)
+Create/list posts within a community.
 
-### Phase 5 — Testing (not started)
+### Phase 3c — Comments (not started)
+Flat comments (create/list) on a post — no nested replies for now.
 
-### Phase 6 — Docker (not started)
+### Phase 3d — Voting (not started)
+Posts only for now — simpler `votes` table (no nullable `comment_id`,
+no check constraint, just one plain unique constraint on
+`(user_id, post_id)`). Comment voting can be added later as its own
+small phase.
+
+### Phase 4 — Pagination (not started)
+Simple offset-based (`?page=&page_size=`), added once posts/comments
+exist to paginate.
+
+### Phase 5 — Frontend (not started)
+
+### Phase 6 — Testing (not started)
+
+### Phase 7 — Docker (not started)
+Single-stage Dockerfile — comes before AWS deployment since Phase 8
+runs this same setup on the EC2 instance.
+
+### Phase 8 — AWS deployment (planned, not started)
+One EC2 instance running docker-compose (backend+frontend) + a separate
+RDS PostgreSQL instance — no load balancer, no ECS/Fargate, no
+Terraform. See `PHASES.md` for the full plan (architecture reasoning,
+step-by-step, CloudWatch logging, and cost/budget safety steps).
