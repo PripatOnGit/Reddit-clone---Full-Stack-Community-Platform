@@ -127,9 +127,58 @@ implying offset has no downsides.
 
 ---
 
-## Phase 4 — Frontend (not started)
+## Phase 4 — Frontend
 
-## Phase 5 — Testing (not started)
+**What we did:** minimal React+Vite UI, deliberately unstyled. Auth
+form, communities list+create, posts list (with page/prev/next matching
+the backend's offset pagination)+create.
+
+**Why:** frontend isn't the focus of this rebuild — functional coverage
+only, same as v2's Phase 4 decision.
+
+**How:** `api.js` centralizes every backend call through one `apiFetch`
+function; stores the JWT in `localStorage` (not a cookie — v3's
+header-based design) and attaches it as `Authorization: Bearer` on
+every request. `App.jsx` — plain state-based view switching, no router.
+
+**Scoped out:** styling/design (explicit), any comment/vote UI (not in
+scope at all).
+
+**Verified:** real headless-browser (Playwright) run against both live
+servers — full signup→login→community→post→pagination→logout flow,
+zero console errors. Needed `CORSMiddleware` on the backend (simpler
+than v2's — no `allow_credentials` needed, since there are no cookies).
+
+See `frontend_flow.md` for the full line-by-line.
+
+---
+
+## Phase 5 — Testing
+
+**What we did:** 17 pytest tests across `test_auth.py`/
+`test_communities.py`/`test_posts.py`, all passed on first run (no bugs
+found this time, unlike v2 where testing caught a real rate-limiter
+bug — worth remembering that testing doesn't ALWAYS surface a bug, and
+that's fine).
+
+**Why:** same reasoning as v2 — turns every ad-hoc manual `TestClient`
+check done throughout this build into something that re-runs
+automatically on future changes.
+
+**How:** separate `reddit_clone_v3_test` database, `Base.metadata.create_all()`
+(no Alembic, consistent with v3's Phase 1 choice), TRUNCATE-between-tests,
+`app.dependency_overrides[get_db]`, a fixture chain (`client` →
+`auth_headers` → `community`).
+
+**Scoped out (2026-09-13):** deeper pytest/fixture exploration for v3 —
+the existing 17-test suite stays as-is and working, but further depth
+on this topic is covered via v2's test suite instead, to keep focus on
+the remaining phases within the time budget.
+
+See `testing_flow.md` and `backend/tests/PYTEST_CONCEPTS.md` for what
+was covered before scoping out further depth.
+
+---
 
 ## Phase 6 — Docker (not started)
 Planned: single-stage Dockerfile (vs. v2's multi-stage builder/runtime

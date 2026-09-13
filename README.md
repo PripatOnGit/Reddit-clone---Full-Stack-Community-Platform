@@ -70,11 +70,12 @@ attached as `Authorization: Bearer` via a central `apiFetch`. Verified
 with a real headless-browser run: full signup→login→community→post→
 pagination→logout flow, zero console errors.
 
-### Phase 5 — Testing ✅
+### Phase 5 — Testing ✅ (scoped out from further depth)
 17 pytest tests across auth/communities/posts, separate test DB,
 TRUNCATE-between-tests, `dependency_overrides[get_db]`. All 17 passed
-on first run. Simpler than a rate-limited/CSRF/rotating-token suite
-would be — a direct consequence of v3's earlier simplification choices.
+on first run. **Deeper pytest/fixture exploration scoped out for v3**
+(2026-09-13) — the existing suite stays as-is and working, but testing
+depth as an interview topic is covered via v2's suite instead.
 
 ### Phase 6 — Docker (not started)
 Single-stage Dockerfile — comes before AWS deployment since Phase 7
