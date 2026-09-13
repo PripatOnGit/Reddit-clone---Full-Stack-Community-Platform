@@ -79,3 +79,35 @@ grants API access, not because there's a refresh token to contrast it
 with — v3 deliberately has just the one, and its expiry is the only
 protection against a stolen token since there's no revocation
 mechanism."*
+
+---
+
+## `app/db/base.py`
+
+### "How do I convince an interviewer this trivial-looking file matters?"
+
+> Question asked: "how to covinve interviwer on this?" (re: a 3-line
+> file that's just `class Base(DeclarativeBase): pass`)
+
+**The confident one-breath answer:** *"`Base` is a shared registry point
+— every model inherits from it, and that's what lets SQLAlchemy track
+all of them together under `Base.metadata`. I use that in
+`create_tables.py`: `Base.metadata.create_all(engine)` builds every
+table that's ever inherited from this one class."* — naming the actual
+file where it pays off signals real understanding, not recitation.
+
+**The sharper follow-up to be ready for:** *"Why not just have models
+inherit directly from SQLAlchemy's `DeclarativeBase`? Your `Base` adds
+nothing right now."* — fair point, honest answer:
+
+*"You're right, functionally identical right now. But having my own
+`Base` subclass gives me ONE place to add shared behavior across every
+model later — e.g. an automatic `created_at`/`updated_at` on every
+table, or a custom `__repr__` for debugging — without touching each
+model file individually. Cheap insurance policy: costs nothing now,
+saves repetitive editing later."*
+
+**One-sentence version under time pressure:** *"It's the single point
+every model plugs into, so SQLAlchemy has one place to look for 'my
+whole schema' — and it's where I'd add shared behavior across all
+models later."*
