@@ -222,3 +222,38 @@ the hood — the difference is it gives me back real objects with named
 fields instead of raw tuples, and paired with a Pydantic response
 schema, sensitive fields like `password_hash` structurally can't leak
 into an API response, because the schema simply never lists them."*
+
+---
+
+## `app/routers/auth.py`
+
+### Q1: Why one query with `|` (OR) instead of two separate queries for username/email?
+
+> Your answer: not sure
+
+**Answer: performance, specifically network round trips.** Every
+`db.query(...)` call is psycopg2 sending SQL over the network to
+Postgres and BLOCKING until a response comes back (see the sync-stack
+entry above). Two separate queries = two full round trips. One combined
+query (`(User.username == x) | (User.email == y)`) checks both
+conditions in ONE round trip — Postgres evaluates the `OR` itself in a
+single `SELECT ... WHERE username = ? OR email = ?`. Matters more as the
+DB gets busier or has real network latency (e.g. a real deployed app
+where the DB isn't on the same machine as the app).
+
+### Q2: Why does `login()` return the identical 401 message whether the username doesn't exist OR the password is wrong?
+
+> Your answer: not sure
+
+**Answer: prevents username enumeration.** If "no such user" and "wrong
+password" were different messages, an attacker could send login
+attempts with different usernames and learn WHICH ones are real
+accounts just from which error comes back — without ever guessing a
+correct password. One identical message for both cases closes that leak
+entirely.
+
+**One-liner for the interview (covers both):** *"I combined the
+username/email uniqueness check into one query to minimize DB round
+trips, and I return the same error message for 'no such user' and
+'wrong password' specifically to avoid leaking which usernames exist to
+an attacker (username enumeration)."*
