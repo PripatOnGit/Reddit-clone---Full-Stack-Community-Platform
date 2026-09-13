@@ -52,9 +52,11 @@ being accepted: the token lives in `localStorage`, which any JavaScript
 on the page can read — more exposed to XSS than a cookie-based approach
 would be.
 
-### Phase 3a — Communities (not started)
-Create/list communities. This is also where `get_current_user` gets
-built — deferred from Phase 2 since nothing needed it until now.
+### Phase 3a — Communities ✅
+Create/list communities. `get_current_user` built here (Phase 2's
+deferred piece) — reads `Authorization: Bearer` header via FastAPI's
+`HTTPBearer`. Verified: no token → 403 (HTTPBearer itself), bad token →
+401 (our own check), valid token → 201, duplicate name → 409.
 
 ### Phase 3b — Posts (not started)
 Create/list posts within a community, with simple offset pagination
