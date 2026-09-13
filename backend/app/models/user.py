@@ -17,5 +17,3 @@ class User(Base):
 
     communities: Mapped[list["Community"]] = relationship(back_populates="owner")
     posts: Mapped[list["Post"]] = relationship(back_populates="author")
-    comments: Mapped[list["Comment"]] = relationship(back_populates="author")
-    votes: Mapped[list["Vote"]] = relationship(back_populates="user")
