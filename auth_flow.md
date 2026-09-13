@@ -315,8 +315,36 @@ is "get data in and out of Postgres" — nothing more, nothing less.
 
 ## Why there's no `POST /auth/logout`
 
-v3 has exactly one JWT, no rotation, no server-side session table. There
-is nothing on the server to revoke. "Logging out" is a **frontend-only**
-action: delete the stored token from `localStorage`. The token itself
-remains technically valid (would still pass `decode_token()`) until its
-own expiry — it's just no longer sitting in the browser to be sent.
+**The core reason:** v3's auth has NO server-side record of who's
+logged in at all — no `refresh_tokens` table, no session table,
+nothing. The JWT is entirely self-contained: the server verifies it
+just by checking its signature and expiry, without looking anything up
+in the database. So the honest answer to "how does the server log
+someone out" is: **there's nothing on the server to change** — there
+was never a database row saying "user X is logged in" to go delete.
+
+**What "logout" means here, concretely:** the client (browser) is the
+only thing holding the token, in `localStorage`. Logging out = the
+frontend deletes it from `localStorage`. On the next request there's no
+token to send, so `get_current_user` (Phase 3) rejects it as
+unauthenticated — same practical effect as being logged out, achieved
+with zero backend code.
+
+**The honest limitation, worth saying plainly:** if someone had ALREADY
+copied that token before it was deleted (stolen via XSS, intercepted,
+whatever), deleting it from your own browser does nothing to stop
+them — it's still cryptographically valid until its natural expiry (60
+minutes) regardless of what your browser does with its own copy. Direct
+consequence of having no server-side revocation mechanism — the same
+tradeoff named explicitly when this single-JWT design was chosen over
+v2's rotation/refresh-token approach.
+
+**How to answer this confidently if an interviewer pushes on it:**
+
+*"There's no `/auth/logout` endpoint because this design has no
+server-side session state — the JWT is self-contained, verified by
+signature alone. So logout is a frontend-only action: delete the token
+from storage. The real limitation is that a stolen token stays valid
+until it expires regardless — that's the tradeoff of not having a
+revocation mechanism, and it's exactly the kind of thing a
+refresh-token-based design solves by tracking sessions server-side."*
