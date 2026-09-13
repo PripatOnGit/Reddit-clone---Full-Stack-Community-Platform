@@ -70,19 +70,20 @@ attached as `Authorization: Bearer` via a central `apiFetch`. Verified
 with a real headless-browser run: full signup→login→community→post→
 pagination→logout flow, zero console errors.
 
-### Phase 5 — Testing ✅ (scoped out from further depth)
-17 pytest tests across auth/communities/posts, separate test DB,
-TRUNCATE-between-tests, `dependency_overrides[get_db]`. All 17 passed
-on first run. **Deeper pytest/fixture exploration scoped out for v3**
-(2026-09-13) — the existing suite stays as-is and working, but testing
-depth as an interview topic is covered via v2's suite instead.
+### Testing — removed from v3's scope (2026-09-13)
+A 17-test pytest suite was built and passing (auth/communities/posts,
+separate test DB, fixture chain), but automated testing was then
+removed from v3 entirely — that story lives in v2's test suite instead,
+keeping v3 focused on auth/CRUD/frontend/Docker/deploy. `testing_flow.md`
+(project root) and the "pytest" entry in `CONCEPTS.md` are kept as
+learning reference even though the actual test code is gone.
 
-### Phase 6 — Docker (not started)
-Single-stage Dockerfile — comes before AWS deployment since Phase 7
+### Phase 5 — Docker (not started)
+Single-stage Dockerfile — comes before AWS deployment since Phase 6
 runs this same setup on the EC2 instance. Multi-stage builds explained
 for comparison at this point too, even though only single-stage gets built.
 
-### Phase 7 — AWS deployment (planned, separate session)
+### Phase 6 — AWS deployment (planned, separate session)
 One EC2 instance running docker-compose (backend+frontend) + a separate
 RDS PostgreSQL instance — no load balancer, no ECS/Fargate, no
 Terraform. See `PHASES.md` for the full plan (architecture reasoning,

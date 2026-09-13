@@ -53,7 +53,7 @@ and CRUD logic are built on top of it, not the other way around.
 
 ---
 
-## Phase 2 — Auth (in progress)
+## Phase 2 — Auth (done)
 
 **What we're doing:** one JWT issued on login, sent back on every
 request via `Authorization: Bearer <token>`. No refresh token, no
@@ -90,7 +90,7 @@ table, no CSRF token to reason about (see below).
 
 ---
 
-## Phase 3a — Communities (not started)
+## Phase 3a — Communities (done)
 
 **What:** `POST /communities` (create), `GET /communities` (list). This
 is also where `core/deps.py`'s `get_current_user()` finally gets built —
@@ -102,7 +102,7 @@ same reasoning v2 used for its `/communities` endpoint).
 
 ---
 
-## Phase 3b — Posts (not started)
+## Phase 3b — Posts (done)
 
 **What:** `POST /communities/{id}/posts` (create), `GET
 /communities/{id}/posts` (list, with simple offset pagination —
@@ -153,45 +153,43 @@ See `frontend_flow.md` for the full line-by-line.
 
 ---
 
-## Phase 5 — Testing
+## Testing — built, then REMOVED from v3's scope entirely (2026-09-13)
 
-**What we did:** 17 pytest tests across `test_auth.py`/
-`test_communities.py`/`test_posts.py`, all passed on first run (no bugs
-found this time, unlike v2 where testing caught a real rate-limiter
-bug — worth remembering that testing doesn't ALWAYS surface a bug, and
-that's fine).
+**What happened:** a 17-test pytest suite was built and fully passing
+(auth/communities/posts, separate test DB, `Base.metadata.create_all()`,
+TRUNCATE-between-tests, `dependency_overrides[get_db]`, a fixture chain
+`client` → `auth_headers` → `community`). Covered thoroughly, including
+a live demo proving fixture re-execution per test and `autouse=True`
+behavior.
 
-**Why:** same reasoning as v2 — turns every ad-hoc manual `TestClient`
-check done throughout this build into something that re-runs
-automatically on future changes.
+**Why removed (not just scoped-out-from-further-depth):** after
+building and understanding it, the decision was made to drop automated
+testing from v3's scope entirely and rely on v2's test suite for that
+interview topic instead — keeps v3 focused on auth/CRUD/frontend/
+Docker/deploy within the time budget. `backend/tests/` (all 4 files)
+deleted, `pytest`/`httpx` removed from `requirements.txt`, the
+`reddit_clone_v3_test` database dropped.
 
-**How:** separate `reddit_clone_v3_test` database, `Base.metadata.create_all()`
-(no Alembic, consistent with v3's Phase 1 choice), TRUNCATE-between-tests,
-`app.dependency_overrides[get_db]`, a fixture chain (`client` →
-`auth_headers` → `community`).
-
-**Scoped out (2026-09-13):** deeper pytest/fixture exploration for v3 —
-the existing 17-test suite stays as-is and working, but further depth
-on this topic is covered via v2's test suite instead, to keep focus on
-the remaining phases within the time budget.
-
-See `testing_flow.md` and `backend/tests/PYTEST_CONCEPTS.md` for what
-was covered before scoping out further depth.
+**What's kept as learning reference despite the code being gone:**
+`testing_flow.md` (project root) and the "pytest" entry in
+`CONCEPTS.md` — the concepts were genuinely learned even though the
+code no longer exists in this project; recoverable via git history if
+ever wanted back.
 
 ---
 
-## Phase 6 — Docker (not started)
+## Phase 5 — Docker (not started)
 Planned: single-stage Dockerfile (vs. v2's multi-stage builder/runtime
 split) — simpler, at the cost of a slightly larger image (build tools
 stay in the final image instead of being discarded). Comes before AWS
-deployment since Phase 7 runs this same `docker-compose` setup on the
+deployment since Phase 6 runs this same `docker-compose` setup on the
 EC2 instance. When we reach this phase, multi-stage will also be
 explained side-by-side for comparison, even though we're only building
 single-stage.
 
 ---
 
-## Phase 7 — AWS deployment (finalized plan, not started)
+## Phase 6 — AWS deployment (finalized plan, not started)
 
 **What we're building:** one EC2 instance (`t2.micro`/`t3.micro`) running
 `docker-compose` (backend + frontend containers only), talking to a
