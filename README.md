@@ -37,10 +37,11 @@ phase.
 Updated at the end of each phase — what was built, and the one or two
 things worth remembering about it.
 
-### Phase 1 — Backend scaffolding (in progress)
+### Phase 1 — Backend scaffolding ✅
 FastAPI app, the 3-table schema above, single-column indexes on foreign
 keys used for filtering (`posts.community_id`). Schema created via
-`create_tables.py`.
+`create_tables.py`. Verified: models import cleanly and register all 3
+tables on `Base.metadata`.
 
 ### Phase 2 — Auth (not started)
 Plan: one JWT per login, sent via `Authorization: Bearer` header, no
