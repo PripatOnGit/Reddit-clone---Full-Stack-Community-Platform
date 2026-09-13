@@ -58,9 +58,11 @@ deferred piece) — reads `Authorization: Bearer` header via FastAPI's
 `HTTPBearer`. Verified: no token → 403 (HTTPBearer itself), bad token →
 401 (our own check), valid token → 201, duplicate name → 409.
 
-### Phase 3b — Posts (not started)
+### Phase 3b — Posts ✅
 Create/list posts within a community, with simple offset pagination
-built directly into the list endpoint.
+built directly into the list endpoint (`offset=(page-1)*page_size`).
+Verified: 25 posts → page 1 returns 20 + total=25, page 2 returns the
+remaining 5, invalid page rejected with 422.
 
 ### Phase 4 — Frontend (not started)
 
