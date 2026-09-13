@@ -10,7 +10,7 @@ app = FastAPI(title="Reddit Clone API (v3)")
 # (no cookies involved, so allow_credentials isn't needed here, unlike v2)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "http://localhost:5175"],  # 5173=vite dev server, 5175=dockerized frontend
     allow_methods=["*"],
     allow_headers=["*"],
 )

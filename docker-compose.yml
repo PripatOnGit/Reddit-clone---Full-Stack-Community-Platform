@@ -1,0 +1,45 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: reddit_clone_v3
+    ports:
+      - "5434:5432" # avoids clashing with the native Postgres service (5432)
+                     # and v2's docker-compose postgres (5433)
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    environment:
+      # "postgres" here is the service name above -- containers on the same
+      # compose network reach each other by service name, never localhost
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/reddit_clone_v3
+      JWT_SECRET_KEY: dev-only-secret-do-not-use-in-real-deployment
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # create the schema, then start the server -- so a freshly created
+    # container always has an up-to-date schema automatically
+    command: sh -c "python create_tables.py && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5175:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
