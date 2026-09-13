@@ -54,3 +54,28 @@ missing. A default = optional, silently falls back if missing.
 - "Where would `JWT_SECRET_KEY` actually come from in a real deployed
   app, versus your local `.env` file?" (→ AWS Secrets Manager /
   environment variables, from the Phase 7 deployment planning)
+
+### Follow-up: "why is it called an ACCESS token if v3 has no refresh token?"
+
+> Question asked: "why we need access token. this is not refresh
+> token. am i right?"
+
+**Verdict: correct** — v3 has only ONE token total, no refresh token
+anywhere. The name "access token" describes its JOB (it grants access
+to protected endpoints), not a contrast with a refresh token — that
+two-token pattern is v2-specific.
+
+**Why it still needs an expiry with nothing to renew it into:** since
+v3 has no way to revoke one specific token early (no `refresh_tokens`
+table, no session tracking), the expiry is the ONLY protection against
+a stolen token — without it, a leaked token would grant access forever
+(short of rotating `JWT_SECRET_KEY` and logging out every user at
+once). 60 minutes is the deliberate tradeoff: no silent renewal when it
+expires (must log in again), in exchange for bounding how long a
+stolen token stays dangerous.
+
+**One-liner to have ready:** *"It's called an access token because it
+grants API access, not because there's a refresh token to contrast it
+with — v3 deliberately has just the one, and its expiry is the only
+protection against a stolen token since there's no revocation
+mechanism."*
