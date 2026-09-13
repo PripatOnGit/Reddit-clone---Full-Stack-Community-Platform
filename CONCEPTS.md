@@ -87,6 +87,50 @@ bulk operations, or anything where you've profiled the ORM's generated
 query and found it genuinely slow). For everyday CRUD like this project,
 the ORM's safety and readability wins are worth it.
 
+### Proof, not just theory: a live request/response comparison
+
+Two throwaway routes, same real DB row, same real HTTP requests:
+
+```python
+# WITHOUT SQLAlchemy -- raw psycopg2, response built by hand
+@app.get('/without-sqlalchemy/{username}')
+def get_user_raw(username: str):
+    cur.execute('SELECT id, username, email, password_hash FROM users WHERE username = %s', (username,))
+    row = cur.fetchone()                       # a TUPLE, values by POSITION only
+    return {'id': row[0], 'username': row[1], 'email': row[2], 'password_hash': row[3]}
+
+# WITH SQLAlchemy + a Pydantic response schema (UserOut only declares id/username/email)
+@app.get('/with-sqlalchemy/{username}', response_model=UserOut)
+def get_user_orm(username: str):
+    user = db.query(User).filter(User.username == username).first()   # a real OBJECT, named fields
+    return user
+```
+
+**Actual output when both were hit with a real request:**
+```
+GET /without-sqlalchemy/priya
+{'id': 1, 'username': 'priya', 'email': 'priya@example.com', 'password_hash': 'fake_hash_for_demo'}
+                                                               ^^^ LEAKED, live, in this exact demo
+
+GET /with-sqlalchemy/priya
+{'id': 1, 'username': 'priya', 'email': 'priya@example.com'}
+   ^^^ password_hash CANNOT appear -- UserOut never declared that field
+```
+
+**What this proves, concretely:**
+- SQLAlchemy still talks to Postgres via psycopg2 underneath — same
+  connection, same SQL over the wire. It sits ON TOP of psycopg2, not
+  instead of it.
+- The real difference is what you get BACK: a named object
+  (`user.email`) instead of an anonymous tuple (`row[2]`) where you must
+  remember column position by hand.
+- Pairing that object with a Pydantic **response schema** is what
+  actually determines what gets serialized into the outgoing HTTP
+  response — and that's a structural guarantee (the field literally
+  isn't listed), not a "developer remembered to exclude it" hope. The
+  raw route above leaked `password_hash` for exactly that reason: a
+  hand-built response dict is easy to get wrong, and it just did.
+
 ---
 
 ## Backend folder structure

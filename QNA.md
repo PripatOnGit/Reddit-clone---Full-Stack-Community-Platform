@@ -154,3 +154,71 @@ the route crashes with an exception.
 regular function — `yield` lets FastAPI hand the session to my route,
 wait for the request to finish, then resume the generator to close it,
 guaranteed, via the `finally` block, even on an error."*
+
+---
+
+## `app/models/user.py`
+
+### "Why can't we just create tables in PostgreSQL directly? Why this `models/` folder?"
+
+> Questions asked (across several tries before it landed): "why we
+> cannot create tables in postgresql? why this model folder?" / "did
+> not get this" / "doubt: what sqlalchemy's purpose?" / "how does
+> sqlalchemy talks to db, what does it returns? without it, what
+> happens?" / "can you explain in terms of actual req/resp?"
+
+**What finally landed it: a live side-by-side request/response demo.**
+Two throwaway FastAPI routes, same real database row, same real HTTP
+requests via `TestClient`:
+
+```python
+# Route A: raw psycopg2, no SQLAlchemy, no Pydantic schema
+@app.get('/without-sqlalchemy/{username}')
+def get_user_raw(username: str):
+    cur.execute('SELECT id, username, email, password_hash FROM users WHERE username = %s', (username,))
+    row = cur.fetchone()   # a TUPLE: (1, 'priya', 'priya@example.com', 'fake_hash_for_demo')
+    return {'id': row[0], 'username': row[1], 'email': row[2], 'password_hash': row[3]}  # built BY HAND
+
+# Route B: SQLAlchemy + a Pydantic response schema (UserOut has only id/username/email)
+@app.get('/with-sqlalchemy/{username}', response_model=UserOut)
+def get_user_orm(username: str):
+    user = db.query(User).filter(User.username == username).first()  # a real User OBJECT
+    return user   # FastAPI + the schema build the JSON automatically
+```
+
+**Actual output:**
+```
+GET /without-sqlalchemy/priya
+{'id': 1, 'username': 'priya', 'email': 'priya@example.com', 'password_hash': 'fake_hash_for_demo'}
+   ^^^ password_hash LEAKED into the real HTTP response, live, in this exact demo
+
+GET /with-sqlalchemy/priya
+{'id': 1, 'username': 'priya', 'email': 'priya@example.com'}
+   ^^^ password_hash CANNOT appear -- UserOut never declared that field
+```
+
+**The actual answers, now concrete:**
+- **How does SQLAlchemy talk to the DB?** Still via psycopg2 underneath
+  — same connection, same SQL sent over the wire. SQLAlchemy sits ON
+  TOP of psycopg2, it doesn't replace it.
+- **What does it return?** A real Python object (`User`, with named
+  attributes `.id`/`.username`/`.email`) instead of an anonymous tuple
+  where you must remember column *position* by hand.
+- **Without it, what happens?** You get tuples everywhere, forever, and
+  you build every API response dict BY HAND — which is exactly how
+  `password_hash` leaked in Route A above. Not hypothetical: it just
+  happened, live, because building a response dict manually is
+  genuinely easy to get wrong.
+- **In terms of req/resp specifically:** the DB layer (SQLAlchemy vs.
+  raw SQL) determines what shape of data you're holding INSIDE the
+  route (object vs. tuple). The response schema (`UserOut`) determines
+  what actually gets serialized into the OUTGOING response body — and
+  that's the layer that structurally prevents a field from ever
+  appearing, rather than relying on a developer remembering to exclude
+  it every single time.
+
+**One-liner for the interview:** *"SQLAlchemy still uses psycopg2 under
+the hood — the difference is it gives me back real objects with named
+fields instead of raw tuples, and paired with a Pydantic response
+schema, sensitive fields like `password_hash` structurally can't leak
+into an API response, because the schema simply never lists them."*
