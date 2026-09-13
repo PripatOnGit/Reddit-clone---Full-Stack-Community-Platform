@@ -86,3 +86,157 @@ raw SQL instead of the ORM?" — answer: complex reporting queries,
 bulk operations, or anything where you've profiled the ORM's generated
 query and found it genuinely slow). For everyday CRUD like this project,
 the ORM's safety and readability wins are worth it.
+
+---
+
+## Backend folder structure
+
+```
+backend/
+├── requirements.txt      Python packages this project needs
+├── .env / .env.example    actual local secrets vs. a template of what's needed
+├── create_tables.py        one-time script: build DB tables from the models
+└── app/
+    ├── main.py               entrypoint -- creates the FastAPI app, wires in routers
+    ├── core/                  cross-cutting code, not tied to one feature (config, later: security)
+    │   └── config.py            reads .env into the Settings object
+    ├── db/                     database PLUMBING -- how we connect/talk to Postgres
+    │   ├── base.py               shared SQLAlchemy Base every model inherits from
+    │   └── session.py             engine + get_db() (one DB session per request)
+    ├── models/                 the actual DB schema -- WHAT data we store, one file per table
+    ├── schemas/                (Phase 2+) API request/response shapes -- separate from models
+    │                          on purpose (e.g. a user response should never include password_hash)
+    └── routers/                (Phase 2+) the actual HTTP endpoints, one file per resource
+```
+
+**The core distinction:** `db/` is *how* we talk to the database (connection
+mechanics); `models/` is *what* the database contains (the schema);
+`schemas/`/`routers/` are the *API layer* on top -- a client request never
+touches `db/`/`models/` directly, it goes through a router, which
+validates input via a schema, then talks to the DB via models.
+
+---
+
+## Why `config.py` is separate from `main.py`
+
+Could technically hardcode `DATABASE_URL = "..."` directly in `main.py` --
+two real problems with that: (1) every file needing the DB URL would have
+to import `main.py`, which is backwards (`main.py` should be at the TOP
+of the import chain, importing routers/models, not something everything
+else imports FROM); (2) hardcoding secrets in a `.py` file means they get
+committed to git and can't differ between your laptop and a real server.
+`config.py` reads from `.env` (gitignored) instead, and sits low in the
+import chain so anything can import `settings` from it.
+
+---
+
+## Why every model inherits from `Base`
+
+`Base` doesn't give models useful behavior to call -- its real job is
+being a **shared registry**. Every model that inherits from the same
+`Base` gets tracked together in `Base.metadata`. That's exactly what
+`create_tables.py`'s `Base.metadata.create_all()` uses: "create every
+table that has ever inherited from this Base." If each model inherited
+from something different, there'd be no single list of "everything in my
+schema" to hand to that function.
+
+---
+
+## Pydantic classes
+
+A Pydantic class (`class Something(BaseModel): ...`) describes the SHAPE
+of data and validates it automatically. Two places this shows up here:
+`Settings` (validates `.env` has what's needed, with correct types), and
+`schemas/` (Phase 2+ -- validates incoming API request bodies; if a field
+is missing/wrong-typed, FastAPI auto-rejects with a `422` BEFORE your
+route function even runs, no manual `if` checks needed).
+
+A normal Python class just holds data; a Pydantic class holds data AND
+enforces it's actually shaped correctly.
+
+---
+
+## DB sessions: one per request, and ACID
+
+**Why does every request get its own DB session, not a shared one?**
+A DB session is like a single conversation with the database -- it
+remembers what you've asked until you commit or rollback. If many
+requests shared one session, one user's half-finished work (not yet
+committed) could leak into another user's query, or get mixed up
+together. `get_db()`'s job: hand each request a FRESH session, close it
+when that request ends -- every request's work is fully isolated from
+every other request's.
+
+**"User session" vs. "DB session" -- these are different things:**
+- A user/login session = "is this person logged in, who are they" (in
+  this project, the JWT they carry) -- can last minutes to days.
+- A DB session (SQLAlchemy's `Session`) = a short conversation with the
+  database lasting only ONE HTTP request -- created at the start, closed
+  at the end. Nothing to do with who's logged in; even an anonymous
+  request gets its own DB session.
+
+**How do concurrent sessions not corrupt each other? -- ACID, enforced by
+Postgres itself, not our code:**
+- **Atomicity** -- a session's work between start and `commit()` is
+  all-or-nothing; a crash/rollback before commit means NONE of it saved.
+- **Consistency** -- Postgres refuses a commit that violates a constraint
+  (bad foreign key, `NOT NULL` violation) -- the DB enforces this, not
+  Python.
+- **Isolation** -- (the concurrency answer) Postgres uses MVCC
+  (multi-version concurrency control): each transaction sees a
+  consistent snapshot, and one session's UNCOMMITTED changes are
+  invisible to every other session until it commits. Two users creating
+  a post at the exact same millisecond each get their own session/
+  transaction, and Postgres's atomic ID sequence generator means both
+  get correct, unique IDs with zero race condition.
+- **Durability** -- once `commit()` returns, the data is on disk (via
+  Postgres's write-ahead log) and survives a crash immediately after.
+
+---
+
+## The sync stack: FastAPI + SQLAlchemy + psycopg2 (and why not async)
+
+Four layers, bottom to top:
+```
+PostgreSQL (the real DB server)
+  ↑ psycopg2 (the DRIVER -- sends raw SQL over the network, BLOCKS waiting for a reply)
+  ↑ SQLAlchemy (the ORM -- Python classes/queries -> SQL text, and rows -> Python objects)
+  ↑ FastAPI + Starlette (receives HTTP requests, routes them to Python functions)
+```
+SQLAlchemy never talks to Postgres directly -- it builds the SQL string
+and hands it to psycopg2, which is the thing that actually opens the
+network connection and blocks until Postgres responds. `settings.database_url`'s
+`postgresql://` prefix is what tells SQLAlchemy to use psycopg2
+underneath -- that's why `psycopg2-binary` is in `requirements.txt` even
+though we never import it directly.
+
+**Why we're not using async/await for the DB layer:** true async DB
+access needs a different driver (`asyncpg`), an `AsyncSession`, and
+`await` on every query -- real added complexity (async context managers,
+different test setup). Plain sync SQLAlchemy is simpler to write and
+reason about, which matters more here than raw throughput.
+
+**Does FastAPI still handle requests concurrently even though our code
+is sync? Yes.** Two different layers:
+1. The OUTER layer (accepting connections, reading/writing HTTP) is
+   Starlette/ASGI and is ALWAYS async, no matter what we write --
+   FastAPI can have many connections open at once without a thread per
+   connection, for free.
+2. OUR route function's body is where the `def` vs `async def` choice
+   matters. A plain `def` route gets its ENTIRE execution handed off to
+   a background thread by FastAPI, so a blocking DB call inside it
+   doesn't freeze the async layer above. An `async def` route runs
+   directly on the event loop instead -- and would freeze everything if
+   it called blocking code by mistake.
+
+**Every route in this project is a plain `def`** (matches our sync
+SQLAlchemy setup) -- concurrency still happens, just via FastAPI's
+background thread pool rather than the async event loop.
+
+**The honest limit, if asked:** the thread pool has a fixed, small size
+(a few dozen threads by default) -- each blocked sync DB call occupies
+one thread for its whole duration. True async can juggle far more
+concurrent WAITING connections than that, since it doesn't dedicate a
+whole OS thread to each one. Only matters at real scale; fine here.
+Good interview answer: *"I used sync SQLAlchemy for simplicity; I'd move
+to async SQLAlchemy if I needed much higher concurrent request volume."*

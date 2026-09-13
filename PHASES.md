@@ -9,8 +9,21 @@ out for now** (and when we'd actually need to add it back).
 ## Phase 1 — Backend scaffolding
 
 **What we did:** set up the FastAPI project skeleton and the database
-schema — 5 tables (`users`, `communities`, `posts`, `comments`, `votes`),
-no auth, no routes beyond `/health`.
+schema — **3 tables** (`users`, `communities`, `posts`) — `comments` and
+`votes` were removed from scope entirely (deferred to a future project,
+not even a later v3 phase; see the finalized-scope decision above). No
+auth yet, no routes beyond `/health`.
+
+Currently being **retyped file-by-file** (config.py, db/base.py,
+db/session.py, the 3 models) under the "you type it, I verify + quiz
+you" workflow, with a deep Q&A pass on the underlying concepts — see
+`CONCEPTS.md` for the full writeups on: the backend folder structure,
+why `config.py` is separate from `main.py`, why models inherit `Base`,
+what Pydantic classes are, why every request gets its own DB session
+(and how ACID/Postgres keeps concurrent sessions from corrupting each
+other), and the full FastAPI + SQLAlchemy + psycopg2 sync stack
+(including why this project uses sync, not async/await, and how FastAPI
+still handles requests concurrently either way).
 
 **Why:** every later phase needs a place to live. The schema comes first
 because the models define what data the app can even represent — auth
@@ -20,15 +33,16 @@ and CRUD logic are built on top of it, not the other way around.
 - `app/core/config.py` — one `Settings` class reading `.env`.
 - `app/db/base.py` + `app/db/session.py` — SQLAlchemy `Base`, `engine`,
   and `get_db()` (yields one DB session per request, always closed after).
-- `app/models/*.py` — the 5 table classes. `votes` uses one table for
-  both post- and comment-votes, guarded by a DB check constraint
-  (exactly one target, value -1 or 1) and partial unique indexes
-  (one vote per user per target).
+- `app/models/*.py` — the 3 table classes (`User`, `Community`, `Post`).
 - `create_tables.py` — `Base.metadata.create_all()`, run once to build
   the schema.
 - `app/main.py` — `FastAPI()` instance + `/health`.
 
 **Scoped out for now:**
+- **`comments` and `votes` tables entirely** — cut from v3's scope
+  (2026-09-13) to fit the 8-hour time budget and keep focus on genuinely
+  understanding auth + communities/posts CRUD first. Real future work,
+  not abandoned — revisit as a follow-up project once this one is solid.
 - **Alembic** (migrations) — no real data yet to preserve across schema
   changes, so `create_tables.py` is enough. Add Alembic back the moment
   there's real user data that a schema change could destroy.
@@ -91,64 +105,44 @@ same reasoning v2 used for its `/communities` endpoint).
 ## Phase 3b — Posts (not started)
 
 **What:** `POST /communities/{id}/posts` (create), `GET
-/communities/{id}/posts` (list, unpaginated for now — pagination is its
-own phase below).
+/communities/{id}/posts` (list, with simple offset pagination —
+`?page=&page_size=` built directly into this endpoint, not a separate
+phase — kept lean per the 8-hour time budget).
 
 ---
 
-## Phase 3c — Comments (not started)
-
-**What:** `POST /posts/{id}/comments` (create), `GET /posts/{id}/comments`
-(list) — flat, no nesting.
-
-**Scoped out for now:** nested replies (`parent_comment_id`) — add later
-as its own small enhancement once flat comments are solid.
+**Comments and voting are OUT of v3's scope entirely** (decided
+2026-09-13, to fit the 8-hour budget and keep full focus on genuinely
+understanding auth + communities/posts first) — not a later v3 phase,
+a separate future project once this one is solid and fully understood.
 
 ---
 
-## Phase 3d — Voting (not started)
-
-**What:** `POST /posts/{id}/vote` — **posts only**.
-
-**Why simpler than v2's vote table:** dropping comment-votes means
-`votes` doesn't need a nullable `comment_id`, a check constraint, or two
-separate partial unique indexes — just
-`(id, user_id, post_id, value)` with one plain unique constraint on
-`(user_id, post_id)`.
-
-**Scoped out for now:** voting on comments — add later as its own phase
-once post-voting is solid.
+**Why offset, not cursor, for the pagination built into 3b:** `OFFSET`/
+`LIMIT` is simpler to reason about; it gets slower at very deep pages on
+very large tables (the database still scans past every skipped row), but
+that cost only matters at a scale this project doesn't need to hit.
+Worth being able to say exactly that in an interview, rather than
+implying offset has no downsides.
 
 ---
 
-## Phase 4 — Pagination (not started)
+## Phase 4 — Frontend (not started)
 
-**What:** simple offset-based pagination (`?page=&page_size=`) added to
-the posts/comments list endpoints, once there's enough data built up
-(via Phases 3b/3c) to actually paginate through.
+## Phase 5 — Testing (not started)
 
-**Why offset, not cursor:** `OFFSET`/`LIMIT` is simpler to reason about;
-it gets slower at very deep pages on very large tables (the database
-still scans past every skipped row), but that cost only matters at a
-scale this project doesn't need to hit. Worth being able to say exactly
-that in an interview, rather than implying offset has no downsides.
-
----
-
-## Phase 5 — Frontend (not started)
-
-## Phase 6 — Testing (not started)
-
-## Phase 7 — Docker (not started)
+## Phase 6 — Docker (not started)
 Planned: single-stage Dockerfile (vs. v2's multi-stage builder/runtime
 split) — simpler, at the cost of a slightly larger image (build tools
 stay in the final image instead of being discarded). Comes before AWS
-deployment since Phase 8 runs this same `docker-compose` setup on the
-EC2 instance.
+deployment since Phase 7 runs this same `docker-compose` setup on the
+EC2 instance. When we reach this phase, multi-stage will also be
+explained side-by-side for comparison, even though we're only building
+single-stage.
 
 ---
 
-## Phase 8 — AWS deployment (finalized plan, not started)
+## Phase 7 — AWS deployment (finalized plan, not started)
 
 **What we're building:** one EC2 instance (`t2.micro`/`t3.micro`) running
 `docker-compose` (backend + frontend containers only), talking to a
