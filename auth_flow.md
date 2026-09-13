@@ -144,6 +144,59 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
 ---
 
+## Where SQLAlchemy actually gets used in this flow
+
+Easy to lose track of which parts are SQLAlchemy vs. Pydantic vs. plain
+FastAPI once it's all in one function. Marked explicitly:
+
+```python
+def signup(payload: UserCreate, db: Session = Depends(get_db)):
+    #                            ^^^^^^^ SQLAlchemy -- `Session` is a SQLAlchemy
+    #                            type; `get_db()` (db/session.py) hands in an
+    #                            actual SQLAlchemy session for this request
+
+    existing = db.query(User).filter(...).first()
+    #          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ SQLAlchemy -- builds and runs
+    #          a real SELECT against Postgres, returns a User object or None
+
+    user = User(username=..., email=..., password_hash=...)
+    #      ^^^^ SQLAlchemy -- constructing an instance of a mapped model class
+    #      (NOT saved to the DB yet -- just an in-memory Python object so far)
+
+    db.add(user)       # SQLAlchemy -- stage this object to be inserted
+    db.commit()         # SQLAlchemy -- actually send the INSERT to Postgres
+    db.refresh(user)      # SQLAlchemy -- re-read the row back (picks up id/created_at)
+
+    return user   # <- NOT SQLAlchemy from here: `response_model=UserOut` (Pydantic)
+                  #    takes over, reading attributes off this SQLAlchemy object
+                  #    and building the JSON response from them
+```
+
+```python
+def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == payload.username).first()
+    #      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ SQLAlchemy again
+    #      -- same pattern: build + run a SELECT, get back an object or None
+
+    if not user or not verify_password(...):   # verify_password is core/security.py -- NOT SQLAlchemy at all
+        raise HTTPException(...)
+
+    access_token = create_access_token(user.id)   # NOT SQLAlchemy -- `user.id` is just
+                                                     # reading a plain Python attribute off
+                                                     # the object SQLAlchemy already gave us
+```
+
+**The pattern to notice:** SQLAlchemy's involvement is narrowly scoped to
+exactly three things in this whole file — (1) `Depends(get_db)` getting a
+session, (2) `db.query(...)` reading data, (3) `db.add()`/`db.commit()`/
+`db.refresh()` writing data. Everything else — validating the request
+(`UserCreate`/`LoginRequest`), hashing passwords, building the JWT,
+shaping the response (`UserOut`/`TokenResponse`) — is a **different**
+library doing a **different** job. SQLAlchemy's entire role in this file
+is "get data in and out of Postgres" — nothing more, nothing less.
+
+---
+
 ## Why there's no `POST /auth/logout`
 
 v3 has exactly one JWT, no rotation, no server-side session table. There
