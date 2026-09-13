@@ -64,7 +64,11 @@ built directly into the list endpoint (`offset=(page-1)*page_size`).
 Verified: 25 posts → page 1 returns 20 + total=25, page 2 returns the
 remaining 5, invalid page rejected with 422.
 
-### Phase 4 — Frontend (not started)
+### Phase 4 — Frontend ✅
+Minimal React+Vite UI (unstyled). Token stored in `localStorage`,
+attached as `Authorization: Bearer` via a central `apiFetch`. Verified
+with a real headless-browser run: full signup→login→community→post→
+pagination→logout flow, zero console errors.
 
 ### Phase 5 — Testing (not started)
 
