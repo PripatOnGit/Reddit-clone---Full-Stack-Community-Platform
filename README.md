@@ -78,10 +78,18 @@ keeping v3 focused on auth/CRUD/frontend/Docker/deploy. `testing_flow.md`
 (project root) and the "pytest" entry in `CONCEPTS.md` are kept as
 learning reference even though the actual test code is gone.
 
-### Phase 5 — Docker (not started)
-Single-stage Dockerfile — comes before AWS deployment since Phase 6
-runs this same setup on the EC2 instance. Multi-stage builds explained
-for comparison at this point too, even though only single-stage gets built.
+### Phase 5 — Docker (backend done; frontend + compose remaining)
+Single-stage backend Dockerfile, built and verified with a real
+container (`docker run`, `host.docker.internal` to reach the host's
+Postgres, `/health` + `/auth/signup` through the container, confirmed
+via direct `psql` query). Measured single-stage vs. v2's multi-stage:
+nearly identical size (335MB both) — this project's dependencies are
+all pure-Python/prebuilt wheels, so there's no compiler/build-tool
+baggage for multi-stage to strip out. The real difference is v2's
+non-root user (security), not size. See `docker_flow.md`.
+
+Still remaining: frontend Dockerfile, `docker-compose.yml` wiring
+postgres+backend+frontend together.
 
 ### Phase 6 — AWS deployment (planned, separate session)
 One EC2 instance running docker-compose (backend+frontend) + a separate
