@@ -111,3 +111,46 @@ saves repetitive editing later."*
 every model plugs into, so SQLAlchemy has one place to look for 'my
 whole schema' — and it's where I'd add shared behavior across all
 models later."*
+
+---
+
+## `app/db/session.py`
+
+### "What does `yield` do?" (in `get_db()`)
+
+> Question asked: "what yeild does?"
+
+**Plain Python first:** `yield` PAUSES a function instead of ending it.
+Calling the generator again resumes exactly where it paused, rather than
+restarting from the top. Demonstrated live:
+```python
+def counter():
+    print('before yield'); yield 1; print('after yield')
+gen = counter()          # nothing runs yet
+next(gen)                # prints "before yield", pauses, returns 1
+next(gen)                # resumes, prints "after yield"
+```
+
+**Mapped onto `get_db()`:**
+```python
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db      # PAUSES here, hands db out to FastAPI
+    finally:
+        db.close()    # only runs once FastAPI resumes the generator
+```
+FastAPI: (1) calls `get_db()`, runs it to the `yield`, passes `db` into
+the route function; (2) the route runs completely; (3) FastAPI resumes
+the generator, running the `finally: db.close()`.
+
+**Why `yield` and not `return db`:** `return` would END the function
+immediately — no way to run cleanup code afterward. `yield` is what
+makes "hand this over, wait, then come back and finish up" possible at
+all — and because the cleanup is in a `finally` block, it runs even if
+the route crashes with an exception.
+
+**One-liner for the interview:** *"`get_db()` is a generator, not a
+regular function — `yield` lets FastAPI hand the session to my route,
+wait for the request to finish, then resume the generator to close it,
+guaranteed, via the `finally` block, even on an error."*
