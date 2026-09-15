@@ -1,100 +1,82 @@
 # Reddit Clone
 
-A full-stack Reddit-style app — signup/login/logout, creating and
-listing communities, creating and listing posts within a community —
-built end-to-end to understand every part of it, not just have working
-code.
+A full-stack Reddit-style community platform — signup/login, creating
+and browsing communities, and creating and browsing posts within a
+community, with pagination.
 
 **Stack:** FastAPI + SQLAlchemy + PostgreSQL (backend), React + Vite
-(frontend).
-
-See `CONCEPTS.md` for a running glossary of concepts covered while
-building this (what each one does, why it's needed) — appended to as we
-go. See `PHASES.md` for the detailed what/why/how/scoped-out log per
-phase.
+(frontend), Docker + docker-compose.
 
 ---
+
+## Features
+
+- JWT-based authentication (signup, login) via `Authorization: Bearer`
+- Create and list communities
+- Create and list posts within a community, with offset-based pagination
+- Fully containerized: backend, frontend, and PostgreSQL each run as
+  their own Docker container, orchestrated with `docker-compose`
 
 ## Architecture
 
 - **Auth:** one JWT issued on login, sent via `Authorization: Bearer`
-  header on every request. No refresh token — when it expires, log in
-  again. Logout is client-side only (delete the token) — there's nothing
-  server-side to revoke.
-- **Data model:** `users`, `communities`, `posts` only. `comments` and
-  `votes` are intentionally out of scope for this project — a separate
-  future project once this one is solid.
-- **Pagination:** simple offset-based (`?page=&page_size=`), built
-  directly into the posts-list endpoint.
-- **Schema:** created directly from the models via
-  `Base.metadata.create_all()` (`create_tables.py`) — no migration tool
-  yet, appropriate while the schema is still taking shape.
+  header on every request. No refresh token — when it expires, the
+  user logs in again. Logout is client-side only (the token is deleted
+  from the browser) — there is no server-side session to revoke.
+- **Data model:** `users`, `communities`, `posts`. Foreign-key and
+  uniqueness constraints (e.g. one community per name) are enforced at
+  the database level, not just in application code.
+- **Pagination:** offset-based (`?page=&page_size=`) on the posts-list
+  endpoint, returning `items`, `total`, `page`, and `page_size` so a
+  client can compute total pages.
+- **Schema management:** the database schema is created directly from
+  the SQLAlchemy models (`create_tables.py`), rather than via a
+  migration tool.
 
----
+## API
 
-## Phase log
+| Method | Path | Auth required |
+|---|---|---|
+| POST | `/auth/signup` | No |
+| POST | `/auth/login` | No |
+| GET | `/communities` | No |
+| POST | `/communities` | Yes |
+| GET | `/communities/{id}/posts?page=&page_size=` | No |
+| POST | `/communities/{id}/posts` | Yes |
+| GET | `/health` | No |
 
-Updated at the end of each phase — what was built, and the one or two
-things worth remembering about it.
+## Running locally
 
-### Phase 1 — Backend scaffolding ✅
-FastAPI app, the 3-table schema above, single-column indexes on foreign
-keys used for filtering (`posts.community_id`). Schema created via
-`create_tables.py`. Verified: models import cleanly and register all 3
-tables on `Base.metadata`.
+**With Docker (recommended):**
+```bash
+docker compose up --build
+```
+This starts PostgreSQL, the backend (`http://localhost:8000`), and the
+frontend (`http://localhost:5175`) together, creating the database
+schema automatically on startup.
 
-### Phase 2 — Auth (not started)
-Plan: one JWT per login, sent via `Authorization: Bearer` header, no
-refresh token, no rotation, no CSRF token needed (bearer-header auth
-isn't vulnerable to CSRF the way cookie-based auth is — a malicious site
-can't make the browser attach a custom header on its behalf). Tradeoff
-being accepted: the token lives in `localStorage`, which any JavaScript
-on the page can read — more exposed to XSS than a cookie-based approach
-would be.
+**Without Docker** (requires a local PostgreSQL instance):
+```bash
+# backend
+cd backend
+python -m venv .venv && .venv/Scripts/activate
+pip install -r requirements.txt
+cp .env.example .env   # then fill in DATABASE_URL / JWT_SECRET_KEY
+python create_tables.py
+uvicorn app.main:app --reload
 
-### Phase 3a — Communities ✅
-Create/list communities. `get_current_user` built here (Phase 2's
-deferred piece) — reads `Authorization: Bearer` header via FastAPI's
-`HTTPBearer`. Verified: no token → 403 (HTTPBearer itself), bad token →
-401 (our own check), valid token → 201, duplicate name → 409.
+# frontend, in a separate terminal
+cd frontend
+npm install
+npm run dev
+```
 
-### Phase 3b — Posts ✅
-Create/list posts within a community, with simple offset pagination
-built directly into the list endpoint (`offset=(page-1)*page_size`).
-Verified: 25 posts → page 1 returns 20 + total=25, page 2 returns the
-remaining 5, invalid page rejected with 422.
+## Project status
 
-### Phase 4 — Frontend ✅
-Minimal React+Vite UI (unstyled). Token stored in `localStorage`,
-attached as `Authorization: Bearer` via a central `apiFetch`. Verified
-with a real headless-browser run: full signup→login→community→post→
-pagination→logout flow, zero console errors.
-
-### Testing — removed from v3's scope (2026-09-13)
-A 17-test pytest suite was built and passing (auth/communities/posts,
-separate test DB, fixture chain), but automated testing was then
-removed from v3 entirely — that story lives in v2's test suite instead,
-keeping v3 focused on auth/CRUD/frontend/Docker/deploy. `testing_flow.md`
-(project root) and the "pytest" entry in `CONCEPTS.md` are kept as
-learning reference even though the actual test code is gone.
-
-### Phase 5 — Docker ✅
-Single-stage Dockerfiles for both backend and frontend (frontend:
-`node:20-slim` throughout, `serve`-d statically — unlike the backend,
-this one WOULD shrink significantly under multi-stage, since all of
-`node_modules`/npm/Node stays in the image here). `docker-compose.yml`
-wires postgres+backend+frontend together. Measured single-stage vs.
-v2's multi-stage backend: nearly identical size (335MB both) — no
-compiled dependencies here for multi-stage to strip out; the real
-difference is v2's non-root user (security), not size. See
-`docker_flow.md`.
-
-Verified with a real headless-browser test against the FULLY
-containerized stack (not dev servers) — signup, login, community,
-post, zero console errors.
-
-### Phase 6 — AWS deployment (planned, separate session)
-One EC2 instance running docker-compose (backend+frontend) + a separate
-RDS PostgreSQL instance — no load balancer, no ECS/Fargate, no
-Terraform. See `PHASES.md` for the full plan (architecture reasoning,
-step-by-step, CloudWatch logging, and cost/budget safety steps).
+- [x] Backend scaffolding (schema, models)
+- [x] Authentication (signup/login)
+- [x] Communities (create/list)
+- [x] Posts (create/list, with pagination)
+- [x] Frontend
+- [x] Docker (backend, frontend, and docker-compose)
+- [ ] AWS deployment (EC2 + RDS) — planned, not yet live
