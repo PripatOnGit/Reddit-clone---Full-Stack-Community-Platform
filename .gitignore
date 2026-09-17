@@ -1,0 +1,16 @@
+# Local-only reference docs -- kept on disk for personal reference,
+# deliberately excluded from the public GitHub repo (which stays clean
+# with only README.md at the root).
+CONCEPTS.md
+PHASES.md
+QNA.md
+auth_flow.md
+communities_flow.md
+deps_flow.md
+docker_flow.md
+docker_frontend_flow.md
+frontend_flow.md
+main_flow.md
+posts_flow.md
+testing_flow.md
+frontend/README.md
